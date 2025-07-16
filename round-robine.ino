@@ -1,3 +1,8 @@
+
+#include <Arduino.h>
+
+// PIN
+// a pin for Led1, led2, and poteniometer (optional)
 const int LED1_PIN = 5;
 const int LED2_PIN  = 6;
 const int POT_PIN = 4;
@@ -6,31 +11,32 @@ const int intervalLED2 = 1000;
 
 unsigned long prev_miliLED1 = 0;
 unsigned long prev_miliLED2 = 0;
-void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(115200);
-  Serial.println("Hello, ESP32-S3!");
-  
-  // Pin Configuration and Output Signal Configuratino
-  pinMode(LED1_PIN, OUTPUT);
-  digitalWrite(LED1_PIN, LOW);
-  pinMode(LED2_PIN, OUTPUT);
-  digitalWrite(LED2_PIN, LOW);
 
-}
+// Function Prototype
+void taskA();
+void taskB();
+void ToggleLED(int pin);
+typedef void (*funcptr)(); // define type; some kind of short-hand
+void exec_tasks_manual(void (*funcptr)());
+void exec_tasks_tcb(int index);
 
-void loop() {
-  // call functions on LED1 and LED2 tasks
-  taskLED1();
-  taskLED2();
-  delay(10); 
+// Task Control Block Implementation
+#define STATE_RUNNING 0
+#define STATE_READY 1
+#define STATE_WAITING 2
+#define STATE_INACTIVE 3
+#define N_MAX_TASKS 2
 
-  // Read analog input from Potentiommeter and print in serial
-  int potValue = analogRead(POT_PIN);  
-  Serial.print("Potentiometer value: ");
-  Serial.println(potValue);
-}
 
+typedef struct TCBStruct{
+  void (*fptr) (void);
+  unsigned short int state;
+  unsigned int delay;
+} TCBStruct;
+
+
+
+// Tasks A and B <=> taskLED1 and taskLED2
 void taskLED1(){
   // Declare and initializaed millies function
   unsigned long curr_mili = millis();
@@ -46,6 +52,63 @@ void taskLED2(){
   if (curr_mili - prev_miliLED2 >= intervalLED2){ // conditional on interval
     prev_miliLED2 = curr_mili;
     ToggleLED(LED2_PIN); // toggle led if conditional is met
+    }
+}
+
+// Create Pointers to Tasks
+funcptr taskA_ptr = taskLED1;
+funcptr taskB_ptr = taskLED2;
+
+
+TCBStruct TaskList[N_MAX_TASKS];
+void initalizeTasks() {
+  int j = 0;
+  TaskList[j].fptr = taskA_ptr;
+  TaskList[j].state = STATE_READY;
+  TaskList[j].delay = 0;
+  j++;
+  TaskList[j].fptr = taskB_ptr;
+  TaskList[j].state = STATE_READY;
+  TaskList[j].delay = 0;
+  j++;
+  TaskList[j].fptr = NULL;
+}
+
+
+
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  Serial.println("Hello, ESP32-S3!");
+  initalizeTasks();
+  pinMode(LED1_PIN, OUTPUT);
+  digitalWrite(LED1_PIN, LOW);
+  pinMode(LED2_PIN, OUTPUT);
+  digitalWrite(LED2_PIN, LOW);
+
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  //exec_tasks_manual(taskA_ptr);
+  //exec_tasks_manual(taskB_ptr);
+  
+  for (int i = 0; i < N_MAX_TASKS; i++) {
+
+        exec_tasks_tcb(i);
+    }
+  delay(10);
+}
+
+void exec_tasks_manual(funcptr FuncPtr){ 
+  FuncPtr();
+}
+
+void exec_tasks_tcb(int index) {
+    TCBStruct* task = &TaskList[index]; // ptr to the address
+    if (task->state == 1) { 
+        task->fptr(); 
     }
 }
 
